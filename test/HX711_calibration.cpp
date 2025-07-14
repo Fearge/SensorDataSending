@@ -4,11 +4,33 @@
 // PURPOSE: HX711 calibration finder for offset and scale
 //     URL: https://github.com/RobTillaart/HX711
 
-#include "HX_calibration.h"
+#include <Arduino.h>
 
-namespace calibration{
+#include "HX71708.h"
 
-void calibrate(HX711 &myScale)
+HX71708 myScale;
+
+//  adjust pins if needed.
+uint8_t dataPin = 8;
+uint8_t clockPin = 9;
+
+void calibrate();
+
+
+void setup()
+{
+  Serial.begin(115200);
+  myScale.begin(dataPin, clockPin);
+}
+
+void loop()
+{
+  calibrate();
+}
+
+
+
+void calibrate()
 {
   Serial.println("\n\nCALIBRATION\n===========");
   Serial.println("remove all weight from the loadcell");
@@ -63,10 +85,6 @@ void calibrate(HX711 &myScale)
 
   Serial.println("\n\n");
 }
-
-}
-
-
 
 
 //  -- END OF FILE --

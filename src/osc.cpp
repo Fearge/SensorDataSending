@@ -12,5 +12,11 @@ namespace OSC {
         WiFiAP::Udp.endPacket(); // Mark the end of the UDP packet
         msg.empty(); // Free space occupied by the message
     }
+
+    void sendFloatArray(float* data, int arraySize) {
+        WiFiAP::Udp.beginPacket(WiFiAP::remoteIP, WiFiAP::remotePort);
+        WiFiAP::Udp.write((uint8_t*)data, arraySize * sizeof(float)); // Send raw bytes
+        WiFiAP::Udp.endPacket();
+    }
 }
 
