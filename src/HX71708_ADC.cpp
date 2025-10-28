@@ -1,6 +1,5 @@
 #include "HX71708_ADC.h" // Bindet die Klassendeklaration ein
 
-// Konstruktor-Implementierung
 /**
  * @brief Konstruktor für die HX71708_ADC-Klasse.
  * @param pdSckPin Der GPIO-Pin, der mit dem PD_SCK-Pin des HX71708 verbunden ist.
@@ -33,7 +32,6 @@ float HX71708_ADC::toGrams(long raw) {
         return (raw - _offset) * _scale_factor;
 }
 
-// begin()-Methode Implementierung
 /**
  * @brief Initialisiert den HX71708 ADC nach dem Einschalten.
  *        Konfiguriert die GPIO-Pins und setzt den ADC in einen bekannten Zustand.
@@ -44,76 +42,57 @@ void HX71708_ADC::begin(void) {
     pinMode(_pdSckPin, OUTPUT);
     pinMode(_doutPin, INPUT);
 
-    // Laut den Hinweisen zur Nutzung soll der Mikrocontroller den PD_SCK-Pin
-    // beim Einschalten des ADC-Chips für mehr als 100 Mikrosekunden auf HIGH ziehen
-    // und dann wieder auf LOW setzen, um den ADC-Chip zurückzusetzen [3].
+    // Zu Beginn PD_SCK 100 Mikrosekunden auf HIGH setzen, um den ADC zurückzusetzen
     digitalWrite(_pdSckPin, HIGH);
     delayMicroseconds(150); // Eine Verzögerung von 150us ist größer als die geforderten 100us [3].
     digitalWrite(_pdSckPin, LOW);
     delay(100); // mindestens 4 Datenzyklen warten
 }
 
-// read320Hz()-Methode Implementierung
 /**
  * @brief Liest einen 24-Bit Sensorwert vom HX71708 ADC und setzt die nächste Datenrate auf 320Hz.
  *        Die serielle Kommunikation erfolgt über die Pins PD_SCK und DOUT.
  *        Die 24-Bit-Ausgangsdaten sind im binären Zweierkomplement-Code formatiert,
- *        wobei das MSB das Vorzeichenbit ist [4].
- *        Die Umwandlung in einen vorzeichenlosen Wert erfolgt durch XOR mit 0x800000 [3].
+ *        wobei das MSB das Vorzeichenbit ist.
+ *        Die Umwandlung in einen vorzeichenlosen Wert erfolgt durch XOR mit 0x800000.
  * @return Der umgewandelte 24-Bit Wert. Gibt 0 zurück, falls ein Timeout auftritt
  *         und der ADC zurückgesetzt werden muss.
  *         Nach einem Reset oder einer Änderung der Datenrate benötigt der ADC
- *         vier Datenzyklen, um stabile Ausgangsdaten zu liefern [5-7].
+ *         vier Datenzyklen, um stabile Ausgangsdaten zu liefern.
  */
 long HX71708_ADC::read320Hz(void) {
     unsigned char i;
-    unsigned long bcd = 0; // Speichert den 24-Bit internen Code [8]
+    unsigned long bcd = 0; // Speichert den 24-Bit internen Code
 
     // Stelle sicher, dass PD_SCK zunächst LOW ist, bevor auf DOUT gewartet wird
     digitalWrite(_pdSckPin, LOW);
 
-    // Warten, bis DOUT auf Low geht. Dies signalisiert, dass der A/D-Wandler bereit ist, Daten auszugeben [9].
-    // Wenn DOUT nicht Low geht, kann dies auf ein Problem hinweisen, und der ADC muss zurückgesetzt werden [3, 7].
+    // Warten, bis DOUT auf Low geht. Dies signalisiert, dass der A/D-Wandler bereit ist, Daten auszugeben
+    // Wenn DOUT nicht Low geht, kann dies auf ein Problem hinweisen, und der ADC muss zurückgesetzt werden
     unsigned long startTime = millis();
     // Ein Timeout von 50ms ist angemessen, da bei 320Hz ein Datenzyklus ca. 3.125ms dauert.
     // Dies gibt dem ADC ausreichend Zeit, aber verhindert unendliches Warten.
     const unsigned long timeout_ms = 50;
 
     while (digitalRead(_doutPin) == HIGH);
-    /*{
-        if (millis() - startTime > timeout_ms) {
-            // Timeout aufgetreten: DOUT bleibt High. ADC muss zurückgesetzt werden [3, 7].
-            Serial.print("HX71708_ADC (PD_SCK: ");
-            Serial.print(_pdSckPin);
-            Serial.print(", DOUT: ");
-            Serial.print(_doutPin);
-            Serial.println(") Timeout: DOUT bleibt High. Setze ADC zurück.");
-            begin(); // Führt einen Reset durch, wie in den Hinweisen beschrieben [3].
-            return 0; // Rückgabe von 0, um einen ungültigen Wert zu signalisieren oder einen Fehlerfall zu kennzeichnen.
-        }
-        // Kurze Verzögerung, um den Mikrocontroller nicht zu blockieren, besonders auf Systemen wie ESP32.
-        delay(1);
-    }*/
-
-    // Verzögerung nach der Fallflanke von DOUT, bevor der erste PD_SCK-Puls kommt (T1 > 1us) [8].
+    // Verzögerung nach der Fallflanke von DOUT, bevor der erste PD_SCK-Puls kommt (T1 > 1us)
     delayMicroseconds(1);
 
 
-    // Lesen der 24 Datenbits. Der HX71708 gibt die Daten MSB (Most Significant Bit) zuerst aus [9].
+    // Lesen der 24 Datenbits. Der HX71708 gibt die Daten MSB (Most Significant Bit) zuerst aus
     for (i = 0; i < 24; i++) {
         digitalWrite(_pdSckPin, HIGH);
-        delayMicroseconds(1);      // High-Zeit T3 < 50us [8]
-        digitalWrite(_pdSckPin, LOW);  // PD_SCK Low-Pegel [8]
-        delayMicroseconds(1);            // Low-Zeit T4 > 0.2us [8]
-
+        delayMicroseconds(1);      // High-Zeit T3 < 50us 
+        digitalWrite(_pdSckPin, LOW);  // PD_SCK Low-Pegel 
+        delayMicroseconds(1);            // Low-Zeit T4 > 0.2us 
         bcd = bcd << 1; // Schiebe den bisher gelesenen Wert nach links, um Platz für das nächste Bit zu schaffen
         if (digitalRead(_doutPin) == HIGH) {
             bcd++; // Wenn DOUT High ist, setze das aktuelle Bit auf 1
         }
     }
 
-    // Senden der zusätzlichen Taktimpulse zur Auswahl der nächsten Ausgangsdatenrate [9].
-    // Für 320Hz sind insgesamt 28 Taktimpulse erforderlich (24 Datenpulse + 4 zusätzliche Pulse) [6, 9].
+    // Senden der zusätzlichen Taktimpulse zur Auswahl der nächsten Ausgangsdatenrate 
+    // Für 320Hz sind insgesamt 28 Taktimpulse erforderlich (24 Datenpulse + 4 zusätzliche Pulse) 
     for (i = 0; i < 4; i++) { // Loop für N=4 zusätzliche Taktimpulse
         digitalWrite(_pdSckPin, HIGH);
         _custom_nop_delay();
@@ -130,7 +109,7 @@ long HX71708_ADC::read320Hz(void) {
 
     /**
      * @brief Liest alle 4 Sensoren und gibt die Werte als Array zurück.
-     * 
+     * Bisher nicht implementiert.
      * @return Ein Array mit den 24-Bit Werten aller 4 Sensoren.
      */
     long read320Hz_All(void){
@@ -139,7 +118,6 @@ long HX71708_ADC::read320Hz(void) {
 
     /**
      * @brief Ermittelt den Nullpunkt des Sensors.
-     *        Führt 20 Messungen durch, um den Nullpunkt zu ermitteln und setzt den Offset.
      */
     void HX71708_ADC::tare() {
         long sum = 0;
