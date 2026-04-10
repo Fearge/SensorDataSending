@@ -5,27 +5,16 @@
 
 /**
  * @brief Eine Klasse zur Steuerung und zum Auslesen des HX71708 24-Bit A/D-Wandlers.
- *
- * Der HX71708 ist ein hochpräziser 24-Bit A/D-Wandler, der speziell für
- * elektronische Waagen entwickelt wurde [1]. Er zeichnet sich durch hohe
- * Integration, schnelle Reaktionszeiten und starke Anti-Interferenz-Fähigkeit aus [1].
- * Der Chip benötigt lediglich 2 I/O-Pins eines Mikrocontrollers zur Steuerung,
- * einschließlich der Abschaltsteuerung (Power-Down-Control) [1].
  */
 class HX71708_ADC {
 private:
-    /**
-     * @brief Eine private Hilfsfunktion für kurze Verzögerungen, die _nop_() ersetzt.
-     *        Entspricht etwa einer Verzögerung von 1 Mikrosekunde.
-     *        Dies ist notwendig, um die Timing-Anforderungen des HX71708 Datenblatts
-     */
     void _custom_nop_delay(void) {
         ((void)0);
     }
 
 public:
-    int _pdSckPin; // Pin für PD_SCK (Power Down Control und Serieller Takt) [2, 3]
-    int _doutPin;  // Pin für DOUT (Serielle Datenausgabe) [2, 3]
+    int _pdSckPin; // Pin für PD_SCK (Power Down Control und Serieller Takt)
+    int _doutPin;  // Pin für DOUT (Serielle Datenausgabe)
     long _offset;
     float _scale_factor; // Skalierungsfaktor für die Kalibrierung des Sensors
     /**

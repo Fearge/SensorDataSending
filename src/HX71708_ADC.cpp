@@ -79,7 +79,7 @@ long HX71708_ADC::read320Hz(void) {
     delayMicroseconds(1);
 
 
-    // Lesen der 24 Datenbits. Der HX71708 gibt die Daten MSB (Most Significant Bit) zuerst aus
+    // Lesen der 24 Datenbits. Der HX71708 gibt MSB (Most Significant Bit) zuerst aus
     for (i = 0; i < 24; i++) {
         digitalWrite(_pdSckPin, HIGH);
         delayMicroseconds(1);      // High-Zeit T3 < 50us 
