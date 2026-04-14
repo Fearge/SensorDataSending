@@ -21,9 +21,9 @@ public:
      * @brief Konstruktor für die HX71708_ADC-Klasse.
      * @param pdSckPin Der GPIO-Pin, der mit dem PD_SCK-Pin des HX71708 verbunden ist.
      *                 PD_SCK ist ein digitaler Eingang für die Abschaltsteuerung
-     *                 (High-Level ist aktiv) und den seriellen Takteingang [3, 5].
+     *                 (High-Level ist aktiv) und den seriellen Takteingang.
      * @param doutPin Der GPIO-Pin, der mit dem DOUT-Pin des HX71708 verbunden ist.
-     *                DOUT ist ein digitaler Ausgang für die serielle Datenausgabe [3, 5].
+     *                DOUT ist ein digitaler Ausgang für die serielle Datenausgabe.
      */
     HX71708_ADC(int pdSckPin, int doutPin);
 
@@ -34,7 +34,7 @@ public:
      *
      *        Laut den Hinweisen zur Nutzung soll der Mikrocontroller den PD_SCK-Pin
      *        beim Einschalten des ADC-Chips für mehr als 100 Mikrosekunden auf HIGH ziehen
-     *        und dann wieder auf LOW setzen, um den ADC-Chip zurückzusetzen [6].
+     *        und dann wieder auf LOW setzen, um den ADC-Chip zurückzusetzen.
      */
     void begin(void);
 
@@ -69,14 +69,14 @@ public:
     float toGrams(long raw);
     /**
      * @brief Liest einen 24-Bit Sensorwert vom HX71708 ADC und setzt die nächste Datenrate auf 320Hz.
-     *        Die serielle Kommunikation erfolgt über die Pins PD_SCK und DOUT [3].
+     *        Die serielle Kommunikation erfolgt über die Pins PD_SCK und DOUT.
      *        Die 24-Bit-Ausgangsdaten sind im binären Zweierkomplement-Code formatiert,
      *        wobei das MSB das Vorzeichenbit ist [7].
-     *        Die Umwandlung in einen vorzeichenlosen Wert erfolgt durch XOR mit 0x800000 [4].
+     *        Die Umwandlung in einen vorzeichenlosen Wert erfolgt durch XOR mit 0x800000.
      * @return Der umgewandelte 24-Bit Wert. Gibt 0 zurück, falls ein Timeout auftritt
      *         und der ADC zurückgesetzt werden muss.
      *         Nach einem Reset oder einer Änderung der Datenrate benötigt der ADC
-     *         vier Datenzyklen, um stabile Ausgangsdaten zu liefern [8, 9].
+     *         vier Datenzyklen, um stabile Ausgangsdaten zu liefern.
      */
     long read320Hz(void);
 

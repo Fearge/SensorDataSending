@@ -44,7 +44,7 @@ void HX71708_ADC::begin(void) {
 
     // Zu Beginn PD_SCK 100 Mikrosekunden auf HIGH setzen, um den ADC zurückzusetzen
     digitalWrite(_pdSckPin, HIGH);
-    delayMicroseconds(150); // Eine Verzögerung von 150us ist größer als die geforderten 100us [3].
+    delayMicroseconds(150); // Eine Verzögerung von 150us ist größer als die geforderten 100us
     digitalWrite(_pdSckPin, LOW);
     delay(100); // mindestens 4 Datenzyklen warten
 }
@@ -72,9 +72,9 @@ long HX71708_ADC::read320Hz(void) {
     unsigned long startTime = millis();
     // Ein Timeout von 50ms ist angemessen, da bei 320Hz ein Datenzyklus ca. 3.125ms dauert.
     // Dies gibt dem ADC ausreichend Zeit, aber verhindert unendliches Warten.
-    const unsigned long timeout_ms = 50;
+    //const unsigned long timeout_ms = 50;
 
-    while (digitalRead(_doutPin) == HIGH);
+    while (digitalRead(_doutPin) == HIGH) yield();
     // Verzögerung nach der Fallflanke von DOUT, bevor der erste PD_SCK-Puls kommt (T1 > 1us)
     delayMicroseconds(1);
 
@@ -121,11 +121,11 @@ long HX71708_ADC::read320Hz(void) {
      */
     void HX71708_ADC::tare() {
         long sum = 0;
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < 320; i++) {
             sum += read320Hz(); // Führe 2 Messungen durch, um den Nullpunkt zu ermitteln
             delay(10); // Kurze Pause zwischen den Messungen
         }
-        _offset = sum / 20; // Berechne den Durchschnitt der Messungen als Offset
+        _offset = sum / 320; // Berechne den Durchschnitt der Messungen als Offset
 }
 /**
  * @brief Gibt Sensorwerte zurück, die um den Nullpunkt korrigiert sind.
@@ -134,7 +134,7 @@ long HX71708_ADC::read320Hz(void) {
     float HX71708_ADC::read_corrected() {
         long rawValue = read320Hz(); // Lese den Rohwert vom ADC
 
-        return _scale_factor * float(rawValue - _offset); // Korrigiere den Wert um den Offset
+        return _scale_factor * long(rawValue - _offset); // Korrigiere den Wert um den Offset
 }
 
 /**
