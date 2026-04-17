@@ -8,6 +8,8 @@
  */
 class HX71708_ADC {
 private:
+    bool _timeout_active;
+
     void _custom_nop_delay(void) {
         ((void)0);
     }
@@ -73,8 +75,8 @@ public:
      *        Die 24-Bit-Ausgangsdaten sind im binären Zweierkomplement-Code formatiert,
      *        wobei das MSB das Vorzeichenbit ist [7].
      *        Die Umwandlung in einen vorzeichenlosen Wert erfolgt durch XOR mit 0x800000.
-     * @return Der umgewandelte 24-Bit Wert. Gibt 0 zurück, falls ein Timeout auftritt
-     *         und der ADC zurückgesetzt werden muss.
+    * @return Der umgewandelte 24-Bit Wert. Bei Timeout wird ein sicherer Fallback
+    *         zurückgegeben und der ADC kurz zurückgesetzt.
      *         Nach einem Reset oder einer Änderung der Datenrate benötigt der ADC
      *         vier Datenzyklen, um stabile Ausgangsdaten zu liefern.
      */

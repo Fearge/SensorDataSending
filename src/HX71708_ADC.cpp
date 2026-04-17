@@ -10,6 +10,7 @@ HX71708_ADC::HX71708_ADC(int pdSckPin, int doutPin) {
     _doutPin = doutPin;
     _offset = 0; // Initialisiere den Offset auf 0
     _scale_factor = 1.0; // Initialisiere den Skalierungsfaktor auf 1.0
+    _timeout_active = false;
 }
 
 long HX71708_ADC::get_offset(void) {
@@ -63,6 +64,7 @@ void HX71708_ADC::begin(void) {
 long HX71708_ADC::read320Hz(void) {
     unsigned char i;
     unsigned long bcd = 0; // Speichert den 24-Bit internen Code
+    const unsigned long timeout_ms = 50;
 
     // Stelle sicher, dass PD_SCK zunächst LOW ist, bevor auf DOUT gewartet wird
     digitalWrite(_pdSckPin, LOW);
@@ -70,11 +72,32 @@ long HX71708_ADC::read320Hz(void) {
     // Warten, bis DOUT auf Low geht. Dies signalisiert, dass der A/D-Wandler bereit ist, Daten auszugeben
     // Wenn DOUT nicht Low geht, kann dies auf ein Problem hinweisen, und der ADC muss zurückgesetzt werden
     unsigned long startTime = millis();
-    // Ein Timeout von 50ms ist angemessen, da bei 320Hz ein Datenzyklus ca. 3.125ms dauert.
-    // Dies gibt dem ADC ausreichend Zeit, aber verhindert unendliches Warten.
-    //const unsigned long timeout_ms = 50;
 
-    while (digitalRead(_doutPin) == HIGH) yield();
+    while (digitalRead(_doutPin) == HIGH) {
+        if (millis() - startTime > timeout_ms) {
+            if (!_timeout_active) {
+                Serial.print("WARN: HX71708 Timeout an DOUT-Pin ");
+                Serial.println(_doutPin);
+            }
+            _timeout_active = true;
+
+            // Kurzer Reset-Puls fuer den ADC zur Erholung nach Bus-/Sensorhaenger.
+            digitalWrite(_pdSckPin, HIGH);
+            delayMicroseconds(150);
+            digitalWrite(_pdSckPin, LOW);
+
+            // Sicherer Fallback: liefert nach read_corrected() einen Wert nahe 0.
+            return _offset;
+        }
+        yield();
+    }
+
+    if (_timeout_active) {
+        Serial.print("INFO: HX71708 wieder erreichbar an DOUT-Pin ");
+        Serial.println(_doutPin);
+        _timeout_active = false;
+    }
+
     // Verzögerung nach der Fallflanke von DOUT, bevor der erste PD_SCK-Puls kommt (T1 > 1us)
     delayMicroseconds(1);
 
@@ -105,36 +128,49 @@ long HX71708_ADC::read320Hz(void) {
 
     return bcd;
 }
+/**
+ * @brief Ermittelt den Nullpunkt des Sensors.
+ */
+void HX71708_ADC::tare() {
+    constexpr int block_count = 8;
+    constexpr int block_size = 40;
+    long block_means[block_count] = {0};
 
-
-    /**
-     * @brief Liest alle 4 Sensoren und gibt die Werte als Array zurück.
-     * Bisher nicht implementiert.
-     * @return Ein Array mit den 24-Bit Werten aller 4 Sensoren.
-     */
-    long read320Hz_All(void){
-
+    for (int block = 0; block < block_count; block++) {
+        long block_sum = 0;
+        for (int sample = 0; sample < block_size; sample++) {
+            block_sum += read320Hz();
+            delay(10);
+        }
+        block_means[block] = block_sum / block_size;
     }
 
-    /**
-     * @brief Ermittelt den Nullpunkt des Sensors.
-     */
-    void HX71708_ADC::tare() {
-        long sum = 0;
-        for (int i = 0; i < 320; i++) {
-            sum += read320Hz(); // Führe 2 Messungen durch, um den Nullpunkt zu ermitteln
-            delay(10); // Kurze Pause zwischen den Messungen
+    for (int i = 1; i < block_count; i++) {
+        long current_value = block_means[i];
+        int position = i - 1;
+        while (position >= 0 && block_means[position] > current_value) {
+            block_means[position + 1] = block_means[position];
+            position--;
         }
-        _offset = sum / 320; // Berechne den Durchschnitt der Messungen als Offset
+        block_means[position + 1] = current_value;
+    }
+
+    long trimmed_sum = 0;
+    for (int i = 1; i < block_count - 1; i++) {
+        trimmed_sum += block_means[i];
+    }
+
+    _offset = trimmed_sum / (block_count - 2);
 }
+
 /**
  * @brief Gibt Sensorwerte zurück, die um den Nullpunkt korrigiert sind.
  * @return Der um den Nullpunkt korrigierte 24-Bit Wert.
  */
-    float HX71708_ADC::read_corrected() {
-        long rawValue = read320Hz(); // Lese den Rohwert vom ADC
+float HX71708_ADC::read_corrected() {
+    long rawValue = read320Hz(); // Lese den Rohwert vom ADC
 
-        return _scale_factor * long(rawValue - _offset); // Korrigiere den Wert um den Offset
+    return _scale_factor * long(rawValue - _offset); // Korrigiere den Wert um den Offset
 }
 
 /**
@@ -142,7 +178,7 @@ long HX71708_ADC::read320Hz(void) {
  *
  * @param knownWeightGrams Das bekannte Gewicht in Gramm, das auf den Sensor gelegt wurde.
  */
-    void HX71708_ADC::calibrate(int knownWeightGrams) {
+void HX71708_ADC::calibrate(int knownWeightGrams) {
     if (knownWeightGrams <= 0) {
         Serial.println("Fehler: Bekanntes Gewicht muss größer als 0 sein.");
         return;
