@@ -11,6 +11,7 @@ HX71708_ADC::HX71708_ADC(int pdSckPin, int doutPin) {
     _offset = 0; // Initialisiere den Offset auf 0
     _scale_factor = 1.0; // Initialisiere den Skalierungsfaktor auf 1.0
     _timeout_active = false;
+    _last_read_timed_out = false;
 }
 
 long HX71708_ADC::get_offset(void) {
@@ -45,7 +46,7 @@ void HX71708_ADC::begin(void) {
 
     // Zu Beginn PD_SCK 100 Mikrosekunden auf HIGH setzen, um den ADC zurückzusetzen
     digitalWrite(_pdSckPin, HIGH);
-    delayMicroseconds(150); // Eine Verzögerung von 150us ist größer als die geforderten 100us
+    delayMicroseconds(200); // Eine Verzögerung von 200us ist größer als die geforderten 100us
     digitalWrite(_pdSckPin, LOW);
     delay(100); // mindestens 4 Datenzyklen warten
 }
@@ -65,6 +66,7 @@ long HX71708_ADC::read320Hz(void) {
     unsigned char i;
     unsigned long bcd = 0; // Speichert den 24-Bit internen Code
     const unsigned long timeout_ms = 50;
+    _last_read_timed_out = false;
 
     // Stelle sicher, dass PD_SCK zunächst LOW ist, bevor auf DOUT gewartet wird
     digitalWrite(_pdSckPin, LOW);
@@ -80,6 +82,7 @@ long HX71708_ADC::read320Hz(void) {
                 Serial.println(_doutPin);
             }
             _timeout_active = true;
+            _last_read_timed_out = true;
 
             // Kurzer Reset-Puls fuer den ADC zur Erholung nach Bus-/Sensorhaenger.
             digitalWrite(_pdSckPin, HIGH);
@@ -134,33 +137,90 @@ long HX71708_ADC::read320Hz(void) {
 void HX71708_ADC::tare() {
     constexpr int block_count = 8;
     constexpr int block_size = 40;
+    constexpr int max_attempts_per_block = block_size * 6;
     long block_means[block_count] = {0};
+    int valid_block_count = 0;
 
-    for (int block = 0; block < block_count; block++) {
+    auto collect_block_mean = [&](long &out_mean, int &out_valid_samples) -> bool {
         long block_sum = 0;
-        for (int sample = 0; sample < block_size; sample++) {
-            block_sum += read320Hz();
+        int valid_samples = 0;
+        int attempts = 0;
+
+        while (valid_samples < block_size && attempts < max_attempts_per_block) {
+            long sample = read320Hz();
+            attempts++;
+
+            if (_last_read_timed_out) {
+                delay(2);
+                continue;
+            }
+
+            block_sum += sample;
+            valid_samples++;
             delay(10);
         }
-        block_means[block] = block_sum / block_size;
+
+        out_valid_samples = valid_samples;
+        if (valid_samples == block_size) {
+            out_mean = block_sum / block_size;
+            return true;
+        }
+        return false;
+    };
+
+    auto sort_ascending = [&](long values[], int count) {
+        for (int i = 1; i < count; i++) {
+            long current_value = values[i];
+            int position = i - 1;
+            while (position >= 0 && values[position] > current_value) {
+                values[position + 1] = values[position];
+                position--;
+            }
+            values[position + 1] = current_value;
+        }
+    };
+
+    for (int block = 0; block < block_count; block++) {
+        long block_mean = 0;
+        int valid_samples = 0;
+        if (collect_block_mean(block_mean, valid_samples)) {
+            block_means[valid_block_count] = block_mean;
+            valid_block_count++;
+        } else {
+            Serial.print("WARN: Tare-Block verworfen (Sensor DOUT ");
+            Serial.print(_doutPin);
+            Serial.print(") valide Samples: ");
+            Serial.print(valid_samples);
+            Serial.print("/");
+            Serial.println(block_size);
+        }
     }
 
-    for (int i = 1; i < block_count; i++) {
-        long current_value = block_means[i];
-        int position = i - 1;
-        while (position >= 0 && block_means[position] > current_value) {
-            block_means[position + 1] = block_means[position];
-            position--;
-        }
-        block_means[position + 1] = current_value;
+    if (valid_block_count == 0) {
+        Serial.print("WARN: Tare abgebrochen, keine validen Samples an DOUT ");
+        Serial.println(_doutPin);
+        return;
     }
+
+    sort_ascending(block_means, valid_block_count);
+
+    int trim_per_side = (valid_block_count >= 5) ? 1 : 0;
+    int start_index = trim_per_side;
+    int end_index = valid_block_count - trim_per_side;
 
     long trimmed_sum = 0;
-    for (int i = 1; i < block_count - 1; i++) {
+    for (int i = start_index; i < end_index; i++) {
         trimmed_sum += block_means[i];
     }
 
-    _offset = trimmed_sum / (block_count - 2);
+    int used_blocks = end_index - start_index;
+    if (used_blocks <= 0) {
+        Serial.print("WARN: Tare abgebrochen, keine gueltigen Bloecke nach Trim an DOUT ");
+        Serial.println(_doutPin);
+        return;
+    }
+
+    _offset = trimmed_sum / used_blocks;
 }
 
 /**
@@ -206,3 +266,73 @@ void HX71708_ADC::calibrate(int knownWeightGrams) {
     Serial.print("Kalibrierungsfaktor gesetzt auf: ");
     Serial.println(_scale_factor, 6); // Ausgabe mit 6 Dezimalstellen
 }
+
+/**
+ * @brief Sanfte Drift-Kompensation durch exponentiell gewichtete Offset-Anpassung.
+ *        Wird aufgerufen, wenn der Sensor längere Zeit im Idle-Zustand war.
+ *        Die neue Offset wird nicht sofort ersetzt, sondern mit exponentieller Gewichtung
+ *        kombiniert: offset_neu = offset_alt * (1 - weight) + neue_messung * weight
+ * 
+ * @param weight_factor Gewichtung des neuen Messwerts (0.0-1.0). Z.B. 0.2 = 20% neu, 80% alt.
+ */
+void HX71708_ADC::soft_tare_update(float weight_factor) {
+    if (weight_factor <= 0.0f || weight_factor > 1.0f) {
+        Serial.println("WARN: soft_tare_update() weight_factor muss zwischen 0.0 und 1.0 sein");
+        return;
+    }
+
+    // Sammle kurze Stichprobe (schnell, kein vollständiges Tare-Protokoll)
+    long sample_sum = 0;
+    int sample_count = 0;
+    const int num_samples = 8;
+    const int timeout_ms = 50;
+
+    for (int i = 0; i < num_samples; i++) {
+        unsigned long start = millis();
+        // Timeout-Check: Falls Sensor hängt, abbrechen
+        while (digitalRead(_doutPin) == HIGH && (millis() - start) < timeout_ms) {
+            yield();
+        }
+        if ((millis() - start) >= timeout_ms) {
+            Serial.print("WARN: soft_tare_update() Timeout an DOUT-Pin ");
+            Serial.println(_doutPin);
+            return; // Abbrechen bei Timeout
+        }
+
+        long raw = read320Hz();
+        if (!_last_read_timed_out) {
+            sample_sum += raw;
+            sample_count++;
+        }
+        delay(5); // Kleine Pause zwischen Messungen
+    }
+
+    if (sample_count < 3) {
+        Serial.print("WARN: soft_tare_update() unzureichend valide Samples an DOUT-Pin ");
+        Serial.print(_doutPin);
+        Serial.print(" (");
+        Serial.print(sample_count);
+        Serial.println("/");
+        Serial.println(num_samples);
+        return;
+    }
+
+    long new_sample = sample_sum / sample_count;
+
+    // Exponentiell gewichtete Kombination
+    float old_factor = 1.0f - weight_factor;
+    long new_offset = (long)((_offset * old_factor) + (new_sample * weight_factor));
+
+    // Nur loggen wenn Änderung größer als Rauschen ist
+    if (abs(new_offset - _offset) > 100) {
+        Serial.print("INFO: soft_tare_update() Drift-Korrektur an DOUT-Pin ");
+        Serial.print(_doutPin);
+        Serial.print(": ");
+        Serial.print(_offset);
+        Serial.print(" -> ");
+        Serial.println(new_offset);
+    }
+
+    _offset = new_offset;
+}
+

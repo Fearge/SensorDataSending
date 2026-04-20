@@ -16,4 +16,10 @@ constexpr float SCALE_FACTORS[NUM_SENSORS] = {0.0186f, 0.0186f, 0.0186f, 0.0186f
 constexpr uint8_t STARTUP_WARMUP_READS = 8;
 constexpr uint16_t PRE_TARE_SETTLE_MS = 250;
 
+// Drift-Kompensation Einstellungen
+constexpr uint16_t DRIFT_IDLE_TIME_MS = 30000;      // 30s ohne Last → Drift-Korrektur
+constexpr float DRIFT_WEIGHT_FACTOR = 0.2f;         // 20% neuer Offset, 80% alt (exponentiell gewichtet)
+constexpr uint16_t DRIFT_COOLDOWN_MS = 5000;        // Mind. 5s zwischen Re-Tare Versuchen
+constexpr uint16_t DRIFT_UPDATE_INTERVAL_MS = 1000; // Check Drift alle 1s
+
 }

@@ -6,6 +6,7 @@
 #include "sensor_runtime.h"
 #include "signal_processing.h"
 #include "transport_osc.h"
+#include "drift_compensation.h"
 
 // Array von Sensor-Objekten
 HX71708_ADC sensors[AppConfig::NUM_SENSORS] = {
@@ -14,6 +15,9 @@ HX71708_ADC sensors[AppConfig::NUM_SENSORS] = {
     HX71708_ADC(AppConfig::SCK_PINS[2], AppConfig::DOUT_PINS[2]),
     HX71708_ADC(AppConfig::SCK_PINS[3], AppConfig::DOUT_PINS[3])
 };
+
+// Drift-Tracking für Langzeit-Stabilität
+DriftTracker drift_trackers[AppConfig::NUM_SENSORS];
 
 void setup() {
     Serial.begin(115200);
@@ -32,6 +36,9 @@ void setup() {
 
     //calibration_values(sensors, AppConfig::NUM_SENSORS);
 
+    // Initialisiere Drift-Kompensation Tracker
+    initialize_drift_trackers(drift_trackers, AppConfig::NUM_SENSORS);
+
     Serial.println("Initialisierung abgeschlossen.");
 
     WiFiAP::initializeAP(); // Initialize WiFi in AP mode
@@ -46,4 +53,13 @@ void loop() {
         AppConfig::BALANCE_MAX
     );
     send_balance_message_osc(balance);
+
+    // Langzeit-Drift-Kompensation: Prüfe ob Sensor idle und führe sanfte Offset-Anpassung durch
+    update_drift_compensation(
+        sensors,
+        drift_trackers,
+        AppConfig::NUM_SENSORS,
+        balance,
+        AppConfig::PRESENCE_THRESHOLD
+    );
 }

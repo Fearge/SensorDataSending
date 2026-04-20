@@ -9,6 +9,7 @@
 class HX71708_ADC {
 private:
     bool _timeout_active;
+    bool _last_read_timed_out;
 
     void _custom_nop_delay(void) {
         ((void)0);
@@ -100,6 +101,16 @@ public:
      * @return void
      */
     void calibrate(int known_weight);
+
+    /**
+     * @brief Sanfte Drift-Kompensation: Passt den Offset exponentiell gewichtet an.
+     *        Wird aufgerufen wenn Sensor längere Zeit idle ist (keine Last).
+     *        Neue Offsets werden nicht sofort ersetzt, sondern gewichtet kombiniert:
+     *        offset_neu = offset_alt * (1 - weight) + neue_messung * weight
+     * @param weight_factor Gewichtung für neuen Messwert (0.0 - 1.0), z.B. 0.2 = 20%
+     * @return void
+     */
+    void soft_tare_update(float weight_factor);
 };
 
 #endif // HX71708_ADC_H
