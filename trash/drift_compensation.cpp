@@ -38,9 +38,6 @@ void update_drift_compensation(
             // State-Transition: idle wird wahr wenn DRIFT_IDLE_TIME_MS überschritten
             if (!trackers[i].idle && idle_duration > AppConfig::DRIFT_IDLE_TIME_MS) {
                 trackers[i].idle = true;
-                Serial.print("INFO: Sensor ");
-                Serial.print(i);
-                Serial.println(" ist jetzt idle (Drift-Korrektur aktiv)");
             }
 
             // Wenn idle UND genug Zeit seit letzter Korrektur vergangen:
@@ -49,8 +46,6 @@ void update_drift_compensation(
                 // Cooldown prüfen: nur alle DRIFT_COOLDOWN_MS versuchen
                 static unsigned long last_tare_time[4] = {0, 0, 0, 0};
                 if ((now - last_tare_time[i]) > AppConfig::DRIFT_COOLDOWN_MS) {
-                    Serial.print("INFO: Triggering soft_tare_update für Sensor ");
-                    Serial.println(i);
                     sensors[i].soft_tare_update(AppConfig::DRIFT_WEIGHT_FACTOR);
                     last_tare_time[i] = now;
                 }
@@ -59,9 +54,6 @@ void update_drift_compensation(
             // System aktiv (balance != 0): Reset Idle-Status
             if (trackers[i].idle) {
                 trackers[i].idle = false;
-                Serial.print("INFO: Sensor ");
-                Serial.print(i);
-                Serial.println(" ist nicht mehr idle");
             }
             trackers[i].last_activity_time = now;
         }

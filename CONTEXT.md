@@ -6,15 +6,16 @@
 - People stand on plate with load cells to control pure data patch with body weight
 - Same Experience for all people, with all different weights
 - Current runtime target: Arduino Nano ESP32
-- Future plan: ESP32 master with Nano sensor nodes over RS485
-- Change Data Output to SLIPOsc
+- Future plan: Rasperry Pi master with Nano sensor nodes over RS485
+
 
 ## Target Architecture
 - Sensor layer: read four HX71708 channels and keep raw values separate from processed values
 - Signal layer: build two pair means, derive one signed balance value from them, and treat total load only as a plausibility signal
 - Output layer: send one compact control value to Pure Data, optionally plus a presence/idle indicator
-- Transport layer: replace OSC with SLIPOsc for the current setup, then replace only the transport with RS485 later
+- Transport layer: Data sent over UART-RS485, replace OSC
 - Stability layer: tare only when the platform is clearly unloaded, add startup settling time, and avoid automatic re-zeroing while a person is standing on the platform
+- ignore everything in the trash folder
 
 ## Current State
 - Current branch: weiterentwicklung
@@ -29,11 +30,11 @@
 - RS485 bus prototype exists in src/bus.cpp but is not wired into main yet
 
 ## Hardware
-- Board(s): Arduino Nano ESP32 master, multiple Arduino Nano V3's as Nodes
+- Board(s): Rasperry Pi master, multiple Arduino Nano V3's as Nodes
 - Sensor type: HX71708-based load cell ADCs
-- RS485 transceiver: planned, not yet integrated
-- Power supply: not documented yet
-- Important pins: SCK pins 3, 5, 7, 9; DOUT pins 2, 4, 6, 8
+- RS485 transceiver: UART TTL to RS485 on arduino nano, RS485 to USB on Rasperry PI
+- Power supply: 12V DC, daisy chained through all Nodes
+- Important pins: SCK pins 3, 5, 7, 9; DOUT pins 2, 4, 6, 8; UART Pins 0, 1
 
 ## Data Flow
 - Sensor raw values: read from four HX71708 ADCs in src/HX71708_ADC.cpp
@@ -42,20 +43,20 @@
 - short settle delay before each sensor tare is active via src/sensor_runtime.cpp
 - tare() now uses block averaging with trimmed extremes in src/HX71708_ADC.cpp
 - Scaling/unit: scale factors are configured in src/app_config.h and applied in src/sensor_runtime.cpp
-- Output format: OSC message with a single signed balance value
+- Output format: OSC message with a single signed balance value, replace by rs485 through serial
 - Balance interpretation: -512 means full load on one sensor pair, 0 means even load, +512 means full load on the other pair
 - Load handling: absolute load should not change the interaction feel, only the balance and presence should matter
 
 ## Communication Protocol
-- Bus type: OSC over WiFi for the current implementation, later SLIPOsc
+- Bus type: OSC over WiFi for the current implementation, later Serial
 - Frame format: not yet finalized for RS485
 - Byte order: planned little-endian for fixed-width bus payloads
 - CRC/checksum: planned for RS485 frames
 - Timing/slot rules: planned master sync with fixed slots
 
 ## Known Issues
-- Tare can be unstable if the load is still settling at startup
-- sometimes doesn't correctly or sensors time out
+- Tare can be unstable if the load is still settling at startup - seems good now, but to be tested
+- sometimes doesn't tare correctly or sensors time out - seems good now, but to be tested
 - Balance and presence thresholds still need practical tuning with real users
 - transport and signal logic are separated, but module boundaries can still be improved
 
@@ -96,7 +97,7 @@
 ## TODO
 - Tune PRESENCE_THRESHOLD and balance sensitivity with real test users
 - Decide final RS485 frame layout
-- Move from OSC to SLIP OSC output path
+- Move from OSC to Serial output path
 - Continue reducing src/main.cpp to orchestration only
 
 ## Next 5 Code Changes

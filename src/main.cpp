@@ -1,12 +1,13 @@
 #include <Arduino.h>
 #include <HX71708_ADC.h> // Die HX71708 Bibliothek für den 24-Bit A/D-Wandler
-#include "osc.h" // Die OSC Bibliothek für die Kommunikation
-#include "server.h" // Die Server-Bibliothek für WiFi und WebServer
+//#include "osc.h" // Die OSC Bibliothek für die Kommunikation
+//#include "server.h" // Die Server-Bibliothek für WiFi und WebServer
 #include "app_config.h"
 #include "sensor_runtime.h"
 #include "signal_processing.h"
 #include "transport_osc.h"
-#include "drift_compensation.h"
+#include "transport_rs485.h"
+// #include "drift_compensation.h"  // Drift-Kompensation ist jetzt in HX71708_ADC integriert
 
 // Array von Sensor-Objekten
 HX71708_ADC sensors[AppConfig::NUM_SENSORS] = {
@@ -16,11 +17,10 @@ HX71708_ADC sensors[AppConfig::NUM_SENSORS] = {
     HX71708_ADC(AppConfig::SCK_PINS[3], AppConfig::DOUT_PINS[3])
 };
 
-// Drift-Tracking für Langzeit-Stabilität
-DriftTracker drift_trackers[AppConfig::NUM_SENSORS];
+// Drift-Tracking ist jetzt in jedem HX71708_ADC-Objekt integriert
 
 void setup() {
-    Serial.begin(115200);
+    Serial.begin(9600);
     delay(5000);
     Serial.println("Initialisiere HX71708 ADCs...");
 
@@ -36,13 +36,17 @@ void setup() {
 
     //calibration_values(sensors, AppConfig::NUM_SENSORS);
 
-    // Initialisiere Drift-Kompensation Tracker
-    initialize_drift_trackers(drift_trackers, AppConfig::NUM_SENSORS);
+    // Drift-Kompensation wird automatisch bei sensor initialization gehandhabt
 
     Serial.println("Initialisierung abgeschlossen.");
 
-    WiFiAP::initializeAP(); // Initialize WiFi in AP mode
-    WiFiAP::printPort(); // Print the UDP port number
+    //WiFiAP::initializeAP(); // Initialize WiFi in AP mode
+    //WiFiAP::printPort(); // Print the UDP port number
+    initialize_rs485_transport();
+    delay(500);
+    
+    // Send initial sync frame to RS485
+    send_sync_over_rs485();
 }
 
 void loop() {
@@ -52,14 +56,12 @@ void loop() {
         AppConfig::PRESENCE_THRESHOLD,
         AppConfig::BALANCE_MAX
     );
-    send_balance_message_osc(balance);
+    
+    //send_balance_message_osc(balance);  // OSC deaktiviert auf Arduino Nano
+    send_balance_over_rs485(static_cast<int16_t>(balance));
 
-    // Langzeit-Drift-Kompensation: Prüfe ob Sensor idle und führe sanfte Offset-Anpassung durch
-    update_drift_compensation(
-        sensors,
-        drift_trackers,
-        AppConfig::NUM_SENSORS,
-        balance,
-        AppConfig::PRESENCE_THRESHOLD
-    );
+    // Drift-Kompensation pro Sensor
+    for (uint8_t i = 0; i < AppConfig::NUM_SENSORS; i++) {
+        sensors[i].update_drift_compensation(balance, AppConfig::PRESENCE_THRESHOLD);
+    }
 }

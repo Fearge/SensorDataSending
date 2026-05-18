@@ -30,9 +30,6 @@ float HX71708_ADC::get_scale_factor(void) {
     return _scale_factor;
 }
 
-float HX71708_ADC::toGrams(long raw) {
-        return (raw - _offset) * _scale_factor;
-}
 
 /**
  * @brief Initialisiert den HX71708 ADC nach dem Einschalten.
@@ -265,6 +262,52 @@ void HX71708_ADC::calibrate(int knownWeightGrams) {
     _scale_factor = knownWeightGrams / (float)(rawValueWithWeight - _offset);
     Serial.print("Kalibrierungsfaktor gesetzt auf: ");
     Serial.println(_scale_factor, 6); // Ausgabe mit 6 Dezimalstellen
+}
+
+
+bool HX71708_ADC::is_idle() const {
+    return _idle;
+}
+
+void HX71708_ADC::mark_activity() {
+    _idle = false;
+    _last_activity_time = millis();
+}
+
+void HX71708_ADC::update_drift_compensation(long balance, long presence_threshold) {
+    unsigned long now = millis();
+    
+    // Prüfe ob System generell idle ist
+    bool system_idle = (balance == 0);
+    
+    // Update-Rate begrenzen
+    if ((now - _last_update_time) < DRIFT_UPDATE_INTERVAL_MS) {
+        return;
+    }
+    _last_update_time = now;
+    
+    if (system_idle) {
+        unsigned long idle_duration = now - _last_activity_time;
+        
+        // Transition zu idle bei Überschreitung von DRIFT_IDLE_TIME_MS
+        if (!_idle && idle_duration > DRIFT_IDLE_TIME_MS) {
+            _idle = true;
+        }
+        
+        // Wenn idle UND Cooldown abgelaufen: Trigger sanfte Korrektur
+        if (_idle && idle_duration > DRIFT_IDLE_TIME_MS) {
+            if ((now - _last_tare_time) > DRIFT_COOLDOWN_MS) {
+                soft_tare_update(DRIFT_WEIGHT_FACTOR);
+                _last_tare_time = now;
+            }
+        }
+    } else {
+        // System aktiv: Reset idle state
+        if (_idle) {
+            _idle = false;
+        }
+        _last_activity_time = now;
+    }
 }
 
 /**

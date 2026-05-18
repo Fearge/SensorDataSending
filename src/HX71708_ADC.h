@@ -10,10 +10,22 @@ class HX71708_ADC {
 private:
     bool _timeout_active;
     bool _last_read_timed_out;
+    
+    // Drift-Kompensations-State
+    unsigned long _last_activity_time;
+    unsigned long _last_update_time;
+    unsigned long _last_tare_time;
+    bool _idle;
 
     void _custom_nop_delay(void) {
         ((void)0);
     }
+    
+    // Drift-Kompensations-Konstanten (sollten mit app_config synchron sein)
+    static constexpr unsigned long DRIFT_IDLE_TIME_MS = 30000;      // 30s
+    static constexpr float DRIFT_WEIGHT_FACTOR = 0.2f;               // 20%
+    static constexpr unsigned long DRIFT_COOLDOWN_MS = 5000;         // 5s
+    static constexpr unsigned long DRIFT_UPDATE_INTERVAL_MS = 1000;  // 1s
 
 public:
     int _pdSckPin; // Pin für PD_SCK (Power Down Control und Serieller Takt)
@@ -111,6 +123,27 @@ public:
      * @return void
      */
     void soft_tare_update(float weight_factor);
+    
+    /**
+     * @brief Gibt an, ob Sensor aktuell im Idle-Zustand ist (ohne Last, längere Zeit).
+     * @return true wenn idle, false sonst
+     */
+    bool is_idle() const;
+    
+    /**
+     * @brief Markiert den Sensor als aktiv (mit Last). Setzt activity-Timer zurück.
+     * @return void
+     */
+    void mark_activity();
+    
+    /**
+     * @brief Prüft Balance und aktualisiert Drift-Kompensation wenn nötig.
+     *        Sollte regelmäßig (ca. 1x pro Sekunde) aufgerufen werden.
+     * @param balance Aktuelle Balance-Messung (um zu prüfen ob System idle)
+     * @param presence_threshold Schwelle, ab der Sensor als "belastet" gilt
+     * @return void
+     */
+    void update_drift_compensation(long balance, long presence_threshold);
 };
 
 #endif // HX71708_ADC_H
