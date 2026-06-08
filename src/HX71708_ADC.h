@@ -31,25 +31,17 @@ public:
     int _pdSckPin; // Pin für PD_SCK (Power Down Control und Serieller Takt)
     int _doutPin;  // Pin für DOUT (Serielle Datenausgabe)
     long _offset;
-    float _scale_factor; // Skalierungsfaktor für die Kalibrierung des Sensors
+    // NOTE: scale factor removed; system will work with raw counts (offset-corrected)
     /**
      * @brief Konstruktor für die HX71708_ADC-Klasse.
-     * @param pdSckPin Der GPIO-Pin, der mit dem PD_SCK-Pin des HX71708 verbunden ist.
-     *                 PD_SCK ist ein digitaler Eingang für die Abschaltsteuerung
-     *                 (High-Level ist aktiv) und den seriellen Takteingang.
-     * @param doutPin Der GPIO-Pin, der mit dem DOUT-Pin des HX71708 verbunden ist.
-     *                DOUT ist ein digitaler Ausgang für die serielle Datenausgabe.
+     * @param pdSckPin Pin, der mit dem PD_SCK-Pin des HX71708 verbunden ist.
+     * @param doutPin Pin, der mit dem DOUT-Pin des HX71708 verbunden ist.
+     *                
      */
     HX71708_ADC(int pdSckPin, int doutPin);
 
     /**
      * @brief Initialisiert den HX71708 ADC nach dem Einschalten.
-     *        Konfiguriert die GPIO-Pins und setzt den ADC in einen bekannten Zustand.
-     *        Diese Methode sollte einmalig für jede Instanz beim Start des Systems aufgerufen werden.
-     *
-     *        Laut den Hinweisen zur Nutzung soll der Mikrocontroller den PD_SCK-Pin
-     *        beim Einschalten des ADC-Chips für mehr als 100 Mikrosekunden auf HIGH ziehen
-     *        und dann wieder auf LOW setzen, um den ADC-Chip zurückzusetzen.
      */
     void begin(void);
 
@@ -64,24 +56,12 @@ public:
      * @param offset Der neue Offset-Wert, der gesetzt werden soll.
      */
     void set_offset(long offset);
+    // scale factor removed; no set_scale_factor/get_scale_factor
     /**
-     * @brief Setzt den Skalierungsfaktor des Sensors.
-     * @param scale_factor Der neue Faktor, der gesetzt werden soll.
+     * @brief Gibt den rohen, um Offset korrigierten Sensorwert zurück (counts).
+     * @return Offset-korrigierter Rohwert als `long`.
      */
-    void set_scale_factor(float scale_factor);
-
-    /**
-     * @brief Gibt den Skalierungsfaktor des Sensors zurück.
-     * @return Der aktuelle Skalierungsfaktor.
-     */
-    float get_scale_factor(void);
-
-    /**
-     * @brief Wandelt den Rohwert des Sensors in Gramm um.
-     * @param raw Der Rohwert des Sensors.
-     * @return Der um den Offset korrigierte Wert in Gramm.
-     */
-    float toGrams(long raw);
+    long read_corrected(void);
     /**
      * @brief Liest einen 24-Bit Sensorwert vom HX71708 ADC und setzt die nächste Datenrate auf 320Hz.
      *        Die serielle Kommunikation erfolgt über die Pins PD_SCK und DOUT.
@@ -101,18 +81,8 @@ public:
      */
     void tare(void);
 
-    /**
-     * @brief Gibt Sensor Werte zurück, die um den Nullpunkt korrigiert sind.
-     * @return Der um den Nullpunkt korrigierte 24-Bit Wert.
-     */
-    float read_corrected(void);
-
-    /**
-     * @brief berechnet den Skalierungsfaktor des Sensors und setzt diesen als Parameter
-     * @param known_weight Ein bekanntes Gewicht, zur ermittelung des Skalierungsfaktors
-     * @return void
-     */
-    void calibrate(int known_weight);
+     /* Note: `calibrate` and scaling were removed — system uses raw counts.
+         Use `tare()` to set zero offset if needed. */
 
     /**
      * @brief Sanfte Drift-Kompensation: Passt den Offset exponentiell gewichtet an.

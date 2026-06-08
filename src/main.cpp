@@ -20,9 +20,6 @@ HX71708_ADC sensors[AppConfig::NUM_SENSORS] = {
 // Drift-Tracking ist jetzt in jedem HX71708_ADC-Objekt integriert
 
 void setup() {
-    //Serial.begin(9600);
-    delay(5000);
-    //Serial.println("Initialisiere HX71708 ADCs...");
 
     initialize_sensors(sensors, AppConfig::NUM_SENSORS);
     delay(1000); // kurze Stabilisierung vor dem Tare
@@ -30,7 +27,6 @@ void setup() {
     calibrate_all_sensors(
         sensors,
         AppConfig::NUM_SENSORS,
-        AppConfig::SCALE_FACTORS,
         AppConfig::PRE_TARE_SETTLE_MS
     );
 

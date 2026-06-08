@@ -58,7 +58,7 @@ void init(HardwareSerial &port, uint8_t node_id) {
 }
 
 // Simple read helper that blocks briefly to collect bytes
-static bool read_exact(uint8_t *buf, size_t len, unsigned long timeout_ms = 50) {
+static bool read_exact(uint8_t *buf, size_t len, unsigned long timeout_ms = 10) {
     unsigned long start = millis();
     size_t idx = 0;
     while (idx < len && (millis() - start) < timeout_ms) {
@@ -81,7 +81,7 @@ void poll(long current_balance) {
         }
 
         uint8_t rest[6];
-        if (!read_exact(rest, 6, 20)) {
+        if (!read_exact(rest, 6)) {
             break; // incomplete
         }
 
@@ -110,4 +110,4 @@ void poll(long current_balance) {
     }
 }
 
-} // namespace BusNode
+}

@@ -9,7 +9,7 @@ HX71708_ADC::HX71708_ADC(int pdSckPin, int doutPin) {
     _pdSckPin = pdSckPin;
     _doutPin = doutPin;
     _offset = 0; // Initialisiere den Offset auf 0
-    _scale_factor = 1.0; // Initialisiere den Skalierungsfaktor auf 1.0
+    // scale factor removed; operate in raw counts
     _timeout_active = false;
     _last_read_timed_out = false;
 }
@@ -21,14 +21,6 @@ void HX71708_ADC::set_offset(long offset) {
         _offset = offset;
     }
 
-void HX71708_ADC::set_scale_factor(float scale_factor) {
-    _scale_factor = scale_factor;
-}
-
-
-float HX71708_ADC::get_scale_factor(void) {
-    return _scale_factor;
-}
 
 
 /**
@@ -224,10 +216,9 @@ void HX71708_ADC::tare() {
  * @brief Gibt Sensorwerte zurück, die um den Nullpunkt korrigiert sind.
  * @return Der um den Nullpunkt korrigierte 24-Bit Wert.
  */
-float HX71708_ADC::read_corrected() {
+long HX71708_ADC::read_corrected() {
     long rawValue = read320Hz(); // Lese den Rohwert vom ADC
-
-    return _scale_factor * long(rawValue - _offset); // Korrigiere den Wert um den Offset
+    return (rawValue - _offset);
 }
 
 /**
@@ -235,34 +226,7 @@ float HX71708_ADC::read_corrected() {
  *
  * @param knownWeightGrams Das bekannte Gewicht in Gramm, das auf den Sensor gelegt wurde.
  */
-void HX71708_ADC::calibrate(int knownWeightGrams) {
-    if (knownWeightGrams <= 0) {
-        Serial.println("Fehler: Bekanntes Gewicht muss größer als 0 sein.");
-        return;
-    }
-
-    // Lese den Rohwert mit dem bekannten Gewicht
-    long rawValueWithWeight = 0;
-    int numReadings = 20;
-    Serial.print("Kalibrierung wird durchgeführt mit ");
-    Serial.print(knownWeightGrams);
-    Serial.println(" Gramm. Bitte Gewicht auflegen.");
-
-    // Warte, bis der Benutzer das Gewicht aufgelegt hat (optional)
-    delay(10000); // 5 Sekunden warten
-
-    for (int i = 0; i < numReadings; i++) {
-        rawValueWithWeight += read320Hz();
-        delay(10);
-    }
-    rawValueWithWeight /= numReadings;
-
-    // Berechne den Skalierungsfaktor
-    // Skalierungsfaktor = (Bekanntes Gewicht) / (Rohwert mit Gewicht - Nullpunkt)
-    _scale_factor = knownWeightGrams / (float)(rawValueWithWeight - _offset);
-    Serial.print("Kalibrierungsfaktor gesetzt auf: ");
-    Serial.println(_scale_factor, 6); // Ausgabe mit 6 Dezimalstellen
-}
+// calibrate removed: system uses raw counts and `tare()` to set zero.
 
 
 bool HX71708_ADC::is_idle() const {
