@@ -5,8 +5,8 @@
 #include "app_config.h"
 #include "sensor_runtime.h"
 #include "signal_processing.h"
-#include "transport_osc.h"
 #include "transport_rs485.h"
+#include "bus_node.h"
 // #include "drift_compensation.h"  // Drift-Kompensation ist jetzt in HX71708_ADC integriert
 
 // Array von Sensor-Objekten
@@ -20,9 +20,9 @@ HX71708_ADC sensors[AppConfig::NUM_SENSORS] = {
 // Drift-Tracking ist jetzt in jedem HX71708_ADC-Objekt integriert
 
 void setup() {
-    Serial.begin(9600);
+    //Serial.begin(9600);
     delay(5000);
-    Serial.println("Initialisiere HX71708 ADCs...");
+    //Serial.println("Initialisiere HX71708 ADCs...");
 
     initialize_sensors(sensors, AppConfig::NUM_SENSORS);
     delay(1000); // kurze Stabilisierung vor dem Tare
@@ -34,19 +34,9 @@ void setup() {
         AppConfig::PRE_TARE_SETTLE_MS
     );
 
-    //calibration_values(sensors, AppConfig::NUM_SENSORS);
-
-    // Drift-Kompensation wird automatisch bei sensor initialization gehandhabt
-
-    Serial.println("Initialisierung abgeschlossen.");
-
-    //WiFiAP::initializeAP(); // Initialize WiFi in AP mode
-    //WiFiAP::printPort(); // Print the UDP port number
     initialize_rs485_transport();
+    BusNode::init(Serial, AppConfig::RS485_NODE_ID);
     delay(500);
-    
-    // Send initial sync frame to RS485
-    send_sync_over_rs485();
 }
 
 void loop() {
@@ -58,7 +48,8 @@ void loop() {
     );
     
     //send_balance_message_osc(balance);  // OSC deaktiviert auf Arduino Nano
-    send_balance_over_rs485(static_cast<int16_t>(balance));
+    // Node: respond to master polls instead of unconditional sending
+    BusNode::poll(balance);
 
     // Drift-Kompensation pro Sensor
     for (uint8_t i = 0; i < AppConfig::NUM_SENSORS; i++) {

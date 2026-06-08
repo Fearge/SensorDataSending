@@ -49,10 +49,11 @@
 
 ## Communication Protocol
 - Bus type: OSC over WiFi for the current implementation, later Serial
-- Frame format: not yet finalized for RS485
-- Byte order: planned little-endian for fixed-width bus payloads
-- CRC/checksum: planned for RS485 frames
-- Timing/slot rules: planned master sync with fixed slots
+- Frame format: finalized: 7‑byte fixed frames (SOF, Type, NodeID, PayloadLSB, PayloadMSB, CRC LSB/MSB)
+- Addressing: each platform/node has a unique `NodeID`. The master polls nodes by sending a poll frame that targets a specific `NodeID` (not a broadcast). Only the node whose `NodeID` matches the polled ID replies. This prevents collisions deterministically.
+- Byte order: little-endian for fixed-width bus payloads
+- CRC/checksum: CRC‑16‑CCITT over Type+NodeID+PayloadLSB+PayloadMSB (init=0xFFFF, poly=0x1021)
+- Timing/slot rules: master‑initiated polling with immediate single‑node reply (no random backoff required); end‑to‑end reply latency target ≤ 5 ms.
 
 ## Known Issues
 - Tare can be unstable if the load is still settling at startup - seems good now, but to be tested
@@ -85,6 +86,7 @@
 - keep protocol details in a separate transport layer
 - use fixed-width integer types for all future bus payloads
 - define frame format, CRC, and timing only after the signal behavior is stable
+- implement master polling by NodeID: master sends a poll targeted at one `NodeID`; only that node replies. Design must guarantee reply latency ≤ 5 ms.
 
 5. Reduce hidden coupling between modules
 - keep HX71708 driver focused on raw read, tare, and calibration
@@ -124,6 +126,3 @@
 - finalize payload fields and CRC rules
 - acceptance: schema ready for sender/receiver implementation
 
-5. Prepare SLIP OSC output migration
-- define packet format and framing integration point
-- acceptance: replacement plan from current OSC path is documented

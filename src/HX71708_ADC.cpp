@@ -367,14 +367,14 @@ void HX71708_ADC::soft_tare_update(float weight_factor) {
     long new_offset = (long)((_offset * old_factor) + (new_sample * weight_factor));
 
     // Nur loggen wenn Änderung größer als Rauschen ist
-    if (abs(new_offset - _offset) > 100) {
+    /*if (abs(new_offset - _offset) > 100) {
         Serial.print("INFO: soft_tare_update() Drift-Korrektur an DOUT-Pin ");
         Serial.print(_doutPin);
         Serial.print(": ");
         Serial.print(_offset);
         Serial.print(" -> ");
         Serial.println(new_offset);
-    }
+    }*/
 
     _offset = new_offset;
 }
