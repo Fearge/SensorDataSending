@@ -26,6 +26,7 @@ import statistics
 
 SOF = 0xA5
 TYPE_BALANCE = 0x01
+TYPE_EMPTY = 0x02
 TYPE_POLL = 0x10
 DEFAULT_NODE_IDS = (1, 2, 3, 4)
 
@@ -132,9 +133,17 @@ def poll_node(ser: serial.Serial, node_id: int, timeout_s: float = 0.05):
 
     msg_type, rx_node_id, payload_lsb, payload_msb = frame
     if msg_type == TYPE_BALANCE and rx_node_id == node_id:
-        value = int.from_bytes(bytes([payload_lsb, payload_msb]), byteorder="little", signed=True)
+        # reconstruct little-endian signed 16-bit balance
+        raw = payload_lsb | (payload_msb << 8)
+        if raw & 0x8000:
+            balance = raw - 0x10000
+        else:
+            balance = raw
         ts = time.strftime("%Y-%m-%d %H:%M:%S")
-        print(f"{ts}  NODE {rx_node_id:02d} BALANCE {value}")
+        print(f"{ts}  NODE {rx_node_id:02d} BALANCE {balance}")
+    elif msg_type == TYPE_EMPTY and rx_node_id == node_id:
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        print(f"{ts}  NODE {rx_node_id:02d} EMPTY (no load)")
     else:
         print(f"NODE {node_id:02d}: unexpected frame type 0x{msg_type:02X} from node {rx_node_id}")
 

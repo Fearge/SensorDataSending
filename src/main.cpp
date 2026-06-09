@@ -5,7 +5,6 @@
 #include "app_config.h"
 #include "sensor_runtime.h"
 #include "signal_processing.h"
-#include "transport_rs485.h"
 #include "bus_node.h"
 // #include "drift_compensation.h"  // Drift-Kompensation ist jetzt in HX71708_ADC integriert
 
@@ -21,6 +20,8 @@ HX71708_ADC sensors[AppConfig::NUM_SENSORS] = {
 
 void setup() {
 
+    Serial.begin(AppConfig::RS485_BAUD_RATE);
+
     initialize_sensors(sensors, AppConfig::NUM_SENSORS);
     delay(1000); // kurze Stabilisierung vor dem Tare
     warm_up_sensors(sensors, AppConfig::NUM_SENSORS, AppConfig::STARTUP_WARMUP_READS);
@@ -30,7 +31,6 @@ void setup() {
         AppConfig::PRE_TARE_SETTLE_MS
     );
 
-    initialize_rs485_transport();
     BusNode::init(Serial, AppConfig::RS485_NODE_ID);
     delay(500);
 }
@@ -42,13 +42,15 @@ void loop() {
         AppConfig::PRESENCE_THRESHOLD,
         AppConfig::BALANCE_MAX
     );
-    
-    //send_balance_message_osc(balance);  // OSC deaktiviert auf Arduino Nano
-    // Node: respond to master polls instead of unconditional sending
-    BusNode::poll(balance);
 
-    // Drift-Kompensation pro Sensor
+    bool system_idle = true;
     for (uint8_t i = 0; i < AppConfig::NUM_SENSORS; i++) {
-        sensors[i].update_drift_compensation(balance, AppConfig::PRESENCE_THRESHOLD);
+        if (!sensors[i].is_idle()) {
+            system_idle = false;
+            break;
+        }
     }
+
+    // Node: respond to master polls instead of unconditional sending
+    BusNode::poll(system_idle, balance);
 }

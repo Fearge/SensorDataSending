@@ -12,6 +12,10 @@ HX71708_ADC::HX71708_ADC(int pdSckPin, int doutPin) {
     // scale factor removed; operate in raw counts
     _timeout_active = false;
     _last_read_timed_out = false;
+    _last_activity_time = millis();
+    _last_update_time = 0;
+    _last_tare_time = 0;
+    _idle = false;
 }
 
 long HX71708_ADC::get_offset(void) {
@@ -238,19 +242,16 @@ void HX71708_ADC::mark_activity() {
     _last_activity_time = millis();
 }
 
-void HX71708_ADC::update_drift_compensation(long balance, long presence_threshold) {
+void HX71708_ADC::update_drift_compensation(long sensor_value, long presence_threshold) {
     unsigned long now = millis();
-    
-    // Prüfe ob System generell idle ist
-    bool system_idle = (balance == 0);
-    
+    bool sensor_idle = (labs(sensor_value) <= presence_threshold);
     // Update-Rate begrenzen
     if ((now - _last_update_time) < DRIFT_UPDATE_INTERVAL_MS) {
         return;
     }
     _last_update_time = now;
     
-    if (system_idle) {
+    if (sensor_idle) {
         unsigned long idle_duration = now - _last_activity_time;
         
         // Transition zu idle bei Überschreitung von DRIFT_IDLE_TIME_MS

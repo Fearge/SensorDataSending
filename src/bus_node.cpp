@@ -52,6 +52,12 @@ bool send_balance_frame(HardwareSerial &port, uint8_t node_id, int16_t balance) 
     return send_frame(port, frame);
 }
 
+bool send_empty_frame(HardwareSerial &port, uint8_t node_id) {
+    uint8_t frame[FRAME_SIZE];
+    build_frame(FRAME_TYPE_EMPTY, node_id, 0x00, 0x00, frame);
+    return send_frame(port, frame);
+}
+
 void init(HardwareSerial &port, uint8_t node_id) {
     serialPort = &port;
     this_node_id = node_id;
@@ -59,18 +65,13 @@ void init(HardwareSerial &port, uint8_t node_id) {
 
 // Simple read helper that blocks briefly to collect bytes
 static bool read_exact(uint8_t *buf, size_t len, unsigned long timeout_ms = 10) {
-    unsigned long start = millis();
-    size_t idx = 0;
-    while (idx < len && (millis() - start) < timeout_ms) {
-        if (serialPort->available()) {
-            int b = serialPort->read();
-            if (b >= 0) buf[idx++] = (uint8_t)b;
-        }
-    }
-    return idx == len;
+    if (!serialPort) return false;
+    serialPort->setTimeout(timeout_ms);
+    size_t n = serialPort->readBytes(reinterpret_cast<char *>(buf), len);
+    return n == len;
 }
 
-void poll(long current_balance) {
+void poll(bool system_idle, long balance) {
     if (!serialPort) return;
 
     while (serialPort->available()) {
@@ -101,9 +102,11 @@ void poll(long current_balance) {
         if (msg_type == FRAME_TYPE_POLL) {
             // Master asking to poll; respond only if addressed to this node
             if (node_id == this_node_id) {
-                // send current balance as int16 immediately (no backoff)
-                int16_t bal16 = (int16_t)current_balance;
-                send_balance_frame(*serialPort, this_node_id, bal16);
+                if (system_idle) {
+                    send_empty_frame(*serialPort, this_node_id);
+                } else {
+                    send_balance_frame(*serialPort, this_node_id, static_cast<int16_t>(balance));
+                }
             }
         }
         // ignore other frame types for node

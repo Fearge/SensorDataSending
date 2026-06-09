@@ -107,13 +107,13 @@ public:
     void mark_activity();
     
     /**
-     * @brief Prüft Balance und aktualisiert Drift-Kompensation wenn nötig.
+     * @brief Prüft den aktuellen Sensorwert und aktualisiert Drift-Kompensation sowie Idle-Status.
      *        Sollte regelmäßig (ca. 1x pro Sekunde) aufgerufen werden.
-     * @param balance Aktuelle Balance-Messung (um zu prüfen ob System idle)
-     * @param presence_threshold Schwelle, ab der Sensor als "belastet" gilt
+     * @param sensor_value Offset-korrigierter Sensorwert in Counts.
+     * @param presence_threshold Schwelle, ab der der Sensor als belastet gilt.
      * @return void
      */
-    void update_drift_compensation(long balance, long presence_threshold);
+    void update_drift_compensation(long sensor_value, long presence_threshold);
 };
 
 #endif // HX71708_ADC_H

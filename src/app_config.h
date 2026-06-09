@@ -15,7 +15,7 @@ constexpr long BALANCE_MAX = 512;
 constexpr uint32_t RS485_BAUD_RATE = 115200;
 constexpr uint8_t RS485_RX_PIN = 0;
 constexpr uint8_t RS485_TX_PIN = 1;
-constexpr uint8_t RS485_NODE_ID = 0x01; // Eindeutige ID für diesen Knoten im RS485 Netzwerk
+constexpr uint8_t RS485_NODE_ID = 0x02; // Eindeutige ID für diesen Knoten im RS485 Netzwerk
 
 constexpr float SCALE_FACTORS[NUM_SENSORS] = {0.0186f, 0.0186f, 0.0186f, 0.0186f};
 constexpr uint8_t STARTUP_WARMUP_READS = 8;
