@@ -1,6 +1,8 @@
 #include "signal_processing.h"
 
-long calculate_balance(long pair_0, long pair_1, long presence_threshold, long balance_max) {
+namespace SignalProcessing {
+
+long _calculate_balance(long pair_0, long pair_1, long presence_threshold, long balance_max) {
     long pair_0_abs = abs(pair_0);
     long pair_1_abs = abs(pair_1);
     long total_load = pair_0_abs + pair_1_abs;
@@ -36,5 +38,6 @@ long compute_balance_from_sensors(
 
     long pair_0 = (all_values[0] + all_values[1]) / 2;
     long pair_1 = (all_values[2] + all_values[3]) / 2;
-    return calculate_balance(pair_0, pair_1, presence_threshold, balance_max);
+    return _calculate_balance(pair_0, pair_1, presence_threshold, balance_max);
+}
 }

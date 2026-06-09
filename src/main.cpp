@@ -22,10 +22,10 @@ void setup() {
 
     Serial.begin(AppConfig::RS485_BAUD_RATE);
 
-    initialize_sensors(sensors, AppConfig::NUM_SENSORS);
+    SensorRuntime::initialize_sensors(sensors, AppConfig::NUM_SENSORS);
     delay(1000); // kurze Stabilisierung vor dem Tare
-    warm_up_sensors(sensors, AppConfig::NUM_SENSORS, AppConfig::STARTUP_WARMUP_READS);
-    calibrate_all_sensors(
+    SensorRuntime::warm_up_sensors(sensors, AppConfig::NUM_SENSORS, AppConfig::STARTUP_WARMUP_READS);
+    SensorRuntime::calibrate_all_sensors(
         sensors,
         AppConfig::NUM_SENSORS,
         AppConfig::PRE_TARE_SETTLE_MS
@@ -36,7 +36,7 @@ void setup() {
 }
 
 void loop() {
-    long balance = compute_balance_from_sensors(
+    long balance = SignalProcessing::compute_balance_from_sensors(
         sensors,
         AppConfig::NUM_SENSORS,
         AppConfig::PRESENCE_THRESHOLD,
@@ -51,6 +51,6 @@ void loop() {
         }
     }
 
-    // Node: respond to master polls instead of unconditional sending
+    // Node: antwortet auf Master-Anfragen mit aktuellem Balance-Wert oder leerem Status
     BusNode::poll(system_idle, balance);
 }

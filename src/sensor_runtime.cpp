@@ -1,5 +1,5 @@
 #include "sensor_runtime.h"
-
+namespace SensorRuntime {
 void initialize_sensors(HX71708_ADC sensors[], uint8_t num_sensors) {
     for (uint8_t i = 0; i < num_sensors; i++) {
         Serial.print("Initialisiere Sensor ");
@@ -37,4 +37,4 @@ void calibrate_all_sensors(
         Serial.println(sensors[i].get_offset());
     }
 }
-
+}
