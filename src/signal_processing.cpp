@@ -33,7 +33,7 @@ long compute_balance_from_sensors(
 
     for (uint8_t i = 0; i < read_count; i++) {
         all_values[i] = sensors[i].read_corrected();
-        sensors[i].update_drift_compensation(all_values[i], presence_threshold);
+        sensors[i].check_idle_and_soft_tare(all_values[i], presence_threshold);
     }
 
     long pair_0 = (all_values[0] + all_values[1]) / 2;

@@ -2,7 +2,7 @@
 #define HX71708_ADC_H
 
 #include <Arduino.h> // Für Arduino-Funktionen wie pinMode, digitalWrite, digitalRead, delayMicroseconds, millis, Serial
-
+#include "app_config.h"
 /**
  * @brief Eine Klasse zur Steuerung und zum Auslesen des HX71708 24-Bit A/D-Wandlers.
  */
@@ -113,7 +113,7 @@ public:
      * @param presence_threshold Schwelle, ab der der Sensor als belastet gilt.
      * @return void
      */
-    void update_drift_compensation(long sensor_value, long presence_threshold);
+    void check_idle_and_soft_tare(long sensor_value, long presence_threshold);
 };
 
 #endif // HX71708_ADC_H

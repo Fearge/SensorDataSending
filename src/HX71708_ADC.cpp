@@ -68,8 +68,9 @@ long HX71708_ADC::read320Hz(void) {
     // Wenn DOUT nicht Low geht, kann dies auf ein Problem hinweisen, und der ADC muss zurückgesetzt werden
     unsigned long startTime = millis();
 
+    //Warten, bis Daten bereit sind
     while (digitalRead(_doutPin) == HIGH) {
-        if (millis() - startTime > timeout_ms) {
+        /*if (millis() - startTime > timeout_ms) {
             if (!_timeout_active) {
                 Serial.print("WARN: HX71708 Timeout an DOUT-Pin ");
                 Serial.println(_doutPin);
@@ -77,22 +78,25 @@ long HX71708_ADC::read320Hz(void) {
             _timeout_active = true;
             _last_read_timed_out = true;
 
-            // Kurzer Reset-Puls fuer den ADC zur Erholung nach Bus-/Sensorhaenger.
+            // Reset und kurze Erholungszeit, damit der ADC wieder stabil konvertieren kann.
             digitalWrite(_pdSckPin, HIGH);
-            delayMicroseconds(150);
+            
             digitalWrite(_pdSckPin, LOW);
+            delay(20);
 
             // Sicherer Fallback: liefert nach read_corrected() einen Wert nahe 0.
             return _offset;
         }
-        yield();
+        yield();*/
+        delayMicroseconds(2);
     }
 
+    /*
     if (_timeout_active) {
         Serial.print("INFO: HX71708 wieder erreichbar an DOUT-Pin ");
         Serial.println(_doutPin);
         _timeout_active = false;
-    }
+    }*/
 
     // Verzögerung nach der Fallflanke von DOUT, bevor der erste PD_SCK-Puls kommt (T1 > 1us)
     delayMicroseconds(1);
@@ -144,7 +148,8 @@ void HX71708_ADC::tare() {
             attempts++;
 
             if (_last_read_timed_out) {
-                delay(2);
+                // Nach Timeout dem ADC Zeit geben, bevor erneut gelesen wird.
+                delay(20);
                 continue;
             }
 
@@ -201,11 +206,6 @@ void HX71708_ADC::tare() {
     int start_index = trim_per_side;
     int end_index = valid_block_count - trim_per_side;
 
-    long trimmed_sum = 0;
-    for (int i = start_index; i < end_index; i++) {
-        trimmed_sum += block_means[i];
-    }
-
     int used_blocks = end_index - start_index;
     if (used_blocks <= 0) {
         Serial.print("WARN: Tare abgebrochen, keine gueltigen Bloecke nach Trim an DOUT ");
@@ -213,7 +213,18 @@ void HX71708_ADC::tare() {
         return;
     }
 
-    _offset = trimmed_sum / used_blocks;
+    int median_index = start_index + (used_blocks / 2);
+    if (used_blocks % 2 == 1) {
+        _offset = block_means[median_index];
+    } else {
+        long lower = block_means[median_index - 1];
+        long upper = block_means[median_index];
+        _offset = (lower + upper) / 2;
+    }
+    Serial.print("INFO: Tare abgeschlossen an DOUT ");
+    Serial.print(_doutPin);
+    Serial.print(", Offset gesetzt auf ");
+    Serial.println(_offset);
 }
 
 /**
@@ -222,7 +233,7 @@ void HX71708_ADC::tare() {
  */
 long HX71708_ADC::read_corrected() {
     long rawValue = read320Hz(); // Lese den Rohwert vom ADC
-    return (rawValue - _offset);
+    return (rawValue - _offset) * AppConfig::SCALE_FACTOR; // Korrigiere um den Offset und skaliere
 }
 
 /**
@@ -242,22 +253,23 @@ void HX71708_ADC::mark_activity() {
     _last_activity_time = millis();
 }
 
-void HX71708_ADC::update_drift_compensation(long sensor_value, long presence_threshold) {
+void HX71708_ADC::check_idle_and_soft_tare(long sensor_value, long presence_threshold) {
     unsigned long now = millis();
     bool sensor_idle = (labs(sensor_value) <= presence_threshold);
+    //zeitliche Abfragen kommen sich in die Quere, erst mal rausgenommen
     // Update-Rate begrenzen
-    if ((now - _last_update_time) < DRIFT_UPDATE_INTERVAL_MS) {
+    /*if ((now - _last_update_time) < DRIFT_UPDATE_INTERVAL_MS) {
         return;
     }
     _last_update_time = now;
-    
+    */
     if (sensor_idle) {
         unsigned long idle_duration = now - _last_activity_time;
-        
+        _idle = true;
         // Transition zu idle bei Überschreitung von DRIFT_IDLE_TIME_MS
-        if (!_idle && idle_duration > DRIFT_IDLE_TIME_MS) {
-            _idle = true;
-        }
+        /*if (!_idle && idle_duration > DRIFT_IDLE_TIME_MS) {
+            
+        }*/
         
         // Wenn idle UND Cooldown abgelaufen: Trigger sanfte Korrektur
         if (_idle && idle_duration > DRIFT_IDLE_TIME_MS) {
@@ -301,11 +313,11 @@ void HX71708_ADC::soft_tare_update(float weight_factor) {
         while (digitalRead(_doutPin) == HIGH && (millis() - start) < timeout_ms) {
             yield();
         }
-        if ((millis() - start) >= timeout_ms) {
+        /*if ((millis() - start) >= timeout_ms) {
             Serial.print("WARN: soft_tare_update() Timeout an DOUT-Pin ");
             Serial.println(_doutPin);
             return; // Abbrechen bei Timeout
-        }
+        }*/
 
         long raw = read320Hz();
         if (!_last_read_timed_out) {
@@ -315,31 +327,12 @@ void HX71708_ADC::soft_tare_update(float weight_factor) {
         delay(5); // Kleine Pause zwischen Messungen
     }
 
-    if (sample_count < 3) {
-        Serial.print("WARN: soft_tare_update() unzureichend valide Samples an DOUT-Pin ");
-        Serial.print(_doutPin);
-        Serial.print(" (");
-        Serial.print(sample_count);
-        Serial.println("/");
-        Serial.println(num_samples);
-        return;
-    }
-
     long new_sample = sample_sum / sample_count;
 
     // Exponentiell gewichtete Kombination
     float old_factor = 1.0f - weight_factor;
     long new_offset = (long)((_offset * old_factor) + (new_sample * weight_factor));
 
-    // Nur loggen wenn Änderung größer als Rauschen ist
-    /*if (abs(new_offset - _offset) > 100) {
-        Serial.print("INFO: soft_tare_update() Drift-Korrektur an DOUT-Pin ");
-        Serial.print(_doutPin);
-        Serial.print(": ");
-        Serial.print(_offset);
-        Serial.print(" -> ");
-        Serial.println(new_offset);
-    }*/
 
     _offset = new_offset;
 }
