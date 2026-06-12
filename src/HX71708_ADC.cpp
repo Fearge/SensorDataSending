@@ -9,7 +9,13 @@ HX71708_ADC::HX71708_ADC(int pdSckPin, int doutPin) {
     _pdSckPin = pdSckPin;
     _doutPin = doutPin;
     _offset = 0; // Initialisiere den Offset auf 0
-    _scale_factor = 1.0; // Initialisiere den Skalierungsfaktor auf 1.0
+    // scale factor removed; operate in raw counts
+    _timeout_active = false;
+    _last_read_timed_out = false;
+    _last_activity_time = millis();
+    _last_update_time = 0;
+    _last_tare_time = 0;
+    _idle = false;
 }
 
 long HX71708_ADC::get_offset(void) {
@@ -19,18 +25,7 @@ void HX71708_ADC::set_offset(long offset) {
         _offset = offset;
     }
 
-void HX71708_ADC::set_scale_factor(float scale_factor) {
-    _scale_factor = scale_factor;
-}
 
-
-float HX71708_ADC::get_scale_factor(void) {
-    return _scale_factor;
-}
-
-float HX71708_ADC::toGrams(long raw) {
-        return (raw - _offset) * _scale_factor;
-}
 
 /**
  * @brief Initialisiert den HX71708 ADC nach dem Einschalten.
@@ -44,7 +39,7 @@ void HX71708_ADC::begin(void) {
 
     // Zu Beginn PD_SCK 100 Mikrosekunden auf HIGH setzen, um den ADC zurückzusetzen
     digitalWrite(_pdSckPin, HIGH);
-    delayMicroseconds(150); // Eine Verzögerung von 150us ist größer als die geforderten 100us [3].
+    delayMicroseconds(200); // Eine Verzögerung von 200us ist größer als die geforderten 100us
     digitalWrite(_pdSckPin, LOW);
     delay(100); // mindestens 4 Datenzyklen warten
 }
@@ -63,6 +58,8 @@ void HX71708_ADC::begin(void) {
 long HX71708_ADC::read320Hz(void) {
     unsigned char i;
     unsigned long bcd = 0; // Speichert den 24-Bit internen Code
+    const unsigned long timeout_ms = 50;
+    _last_read_timed_out = false;
 
     // Stelle sicher, dass PD_SCK zunächst LOW ist, bevor auf DOUT gewartet wird
     digitalWrite(_pdSckPin, LOW);
@@ -70,16 +67,42 @@ long HX71708_ADC::read320Hz(void) {
     // Warten, bis DOUT auf Low geht. Dies signalisiert, dass der A/D-Wandler bereit ist, Daten auszugeben
     // Wenn DOUT nicht Low geht, kann dies auf ein Problem hinweisen, und der ADC muss zurückgesetzt werden
     unsigned long startTime = millis();
-    // Ein Timeout von 50ms ist angemessen, da bei 320Hz ein Datenzyklus ca. 3.125ms dauert.
-    // Dies gibt dem ADC ausreichend Zeit, aber verhindert unendliches Warten.
-    const unsigned long timeout_ms = 50;
 
-    while (digitalRead(_doutPin) == HIGH);
+    //Warten, bis Daten bereit sind
+    while (digitalRead(_doutPin) == HIGH) {
+        /*if (millis() - startTime > timeout_ms) {
+            if (!_timeout_active) {
+                Serial.print("WARN: HX71708 Timeout an DOUT-Pin ");
+                Serial.println(_doutPin);
+            }
+            _timeout_active = true;
+            _last_read_timed_out = true;
+
+            // Reset und kurze Erholungszeit, damit der ADC wieder stabil konvertieren kann.
+            digitalWrite(_pdSckPin, HIGH);
+            
+            digitalWrite(_pdSckPin, LOW);
+            delay(20);
+
+            // Sicherer Fallback: liefert nach read_corrected() einen Wert nahe 0.
+            return _offset;
+        }
+        yield();*/
+        delayMicroseconds(2);
+    }
+
+    /*
+    if (_timeout_active) {
+        Serial.print("INFO: HX71708 wieder erreichbar an DOUT-Pin ");
+        Serial.println(_doutPin);
+        _timeout_active = false;
+    }*/
+
     // Verzögerung nach der Fallflanke von DOUT, bevor der erste PD_SCK-Puls kommt (T1 > 1us)
     delayMicroseconds(1);
 
 
-    // Lesen der 24 Datenbits. Der HX71708 gibt die Daten MSB (Most Significant Bit) zuerst aus
+    // Lesen der 24 Datenbits. Der HX71708 gibt MSB (Most Significant Bit) zuerst aus
     for (i = 0; i < 24; i++) {
         digitalWrite(_pdSckPin, HIGH);
         delayMicroseconds(1);      // High-Zeit T3 < 50us 
@@ -105,36 +128,112 @@ long HX71708_ADC::read320Hz(void) {
 
     return bcd;
 }
+/**
+ * @brief Ermittelt den Nullpunkt des Sensors.
+ */
+void HX71708_ADC::tare() {
+    constexpr int block_count = 8;
+    constexpr int block_size = 40;
+    constexpr int max_attempts_per_block = block_size * 6;
+    long block_means[block_count] = {0};
+    int valid_block_count = 0;
 
+    auto collect_block_mean = [&](long &out_mean, int &out_valid_samples) -> bool {
+        long block_sum = 0;
+        int valid_samples = 0;
+        int attempts = 0;
 
-    /**
-     * @brief Liest alle 4 Sensoren und gibt die Werte als Array zurück.
-     * Bisher nicht implementiert.
-     * @return Ein Array mit den 24-Bit Werten aller 4 Sensoren.
-     */
-    long read320Hz_All(void){
+        while (valid_samples < block_size && attempts < max_attempts_per_block) {
+            long sample = read320Hz();
+            attempts++;
 
+            if (_last_read_timed_out) {
+                // Nach Timeout dem ADC Zeit geben, bevor erneut gelesen wird.
+                delay(20);
+                continue;
+            }
+
+            block_sum += sample;
+            valid_samples++;
+            delay(10);
+        }
+
+        out_valid_samples = valid_samples;
+        if (valid_samples == block_size) {
+            out_mean = block_sum / block_size;
+            return true;
+        }
+        return false;
+    };
+
+    auto sort_ascending = [&](long values[], int count) {
+        for (int i = 1; i < count; i++) {
+            long current_value = values[i];
+            int position = i - 1;
+            while (position >= 0 && values[position] > current_value) {
+                values[position + 1] = values[position];
+                position--;
+            }
+            values[position + 1] = current_value;
+        }
+    };
+
+    for (int block = 0; block < block_count; block++) {
+        long block_mean = 0;
+        int valid_samples = 0;
+        if (collect_block_mean(block_mean, valid_samples)) {
+            block_means[valid_block_count] = block_mean;
+            valid_block_count++;
+        } else {
+            Serial.print("WARN: Tare-Block verworfen (Sensor DOUT ");
+            Serial.print(_doutPin);
+            Serial.print(") valide Samples: ");
+            Serial.print(valid_samples);
+            Serial.print("/");
+            Serial.println(block_size);
+        }
     }
 
-    /**
-     * @brief Ermittelt den Nullpunkt des Sensors.
-     */
-    void HX71708_ADC::tare() {
-        long sum = 0;
-        for (int i = 0; i < 20; i++) {
-            sum += read320Hz(); // Führe 2 Messungen durch, um den Nullpunkt zu ermitteln
-            delay(10); // Kurze Pause zwischen den Messungen
-        }
-        _offset = sum / 20; // Berechne den Durchschnitt der Messungen als Offset
+    if (valid_block_count == 0) {
+        Serial.print("WARN: Tare abgebrochen, keine validen Samples an DOUT ");
+        Serial.println(_doutPin);
+        return;
+    }
+
+    sort_ascending(block_means, valid_block_count);
+
+    int trim_per_side = (valid_block_count >= 5) ? 1 : 0;
+    int start_index = trim_per_side;
+    int end_index = valid_block_count - trim_per_side;
+
+    int used_blocks = end_index - start_index;
+    if (used_blocks <= 0) {
+        Serial.print("WARN: Tare abgebrochen, keine gueltigen Bloecke nach Trim an DOUT ");
+        Serial.println(_doutPin);
+        return;
+    }
+
+    int median_index = start_index + (used_blocks / 2);
+    if (used_blocks % 2 == 1) {
+        _offset = block_means[median_index];
+    } else {
+        long lower = block_means[median_index - 1];
+        long upper = block_means[median_index];
+        _offset = (lower + upper) / 2;
+    }
+    Serial.print("INFO: Tare abgeschlossen an DOUT ");
+    Serial.print(_doutPin);
+    Serial.print(", Offset gesetzt auf ");
+    Serial.println(_offset);
 }
+
 /**
  * @brief Gibt Sensorwerte zurück, die um den Nullpunkt korrigiert sind.
  * @return Der um den Nullpunkt korrigierte 24-Bit Wert.
  */
-    float HX71708_ADC::read_corrected() {
-        long rawValue = read320Hz(); // Lese den Rohwert vom ADC
-
-        return _scale_factor * float(rawValue - _offset); // Korrigiere den Wert um den Offset
+long HX71708_ADC::read_corrected() {
+    long rawValue = read320Hz(); // Lese den Rohwert vom ADC
+    return (rawValue - _offset) * AppConfig::SCALE_FACTOR; // Korrigiere um den Offset und skaliere
 }
 
 /**
@@ -142,31 +241,99 @@ long HX71708_ADC::read320Hz(void) {
  *
  * @param knownWeightGrams Das bekannte Gewicht in Gramm, das auf den Sensor gelegt wurde.
  */
-    void HX71708_ADC::calibrate(int knownWeightGrams) {
-    if (knownWeightGrams <= 0) {
-        Serial.println("Fehler: Bekanntes Gewicht muss größer als 0 sein.");
+// calibrate removed: system uses raw counts and `tare()` to set zero.
+
+
+bool HX71708_ADC::is_idle() const {
+    return _idle;
+}
+
+void HX71708_ADC::mark_activity() {
+    _idle = false;
+    _last_activity_time = millis();
+}
+
+void HX71708_ADC::check_idle_and_soft_tare(long sensor_value, long presence_threshold) {
+    unsigned long now = millis();
+    bool sensor_idle = (labs(sensor_value) <= presence_threshold);
+    //zeitliche Abfragen kommen sich in die Quere, erst mal rausgenommen
+    // Update-Rate begrenzen
+    /*if ((now - _last_update_time) < DRIFT_UPDATE_INTERVAL_MS) {
+        return;
+    }
+    _last_update_time = now;
+    */
+    if (sensor_idle) {
+        unsigned long idle_duration = now - _last_activity_time;
+        _idle = true;
+        // Transition zu idle bei Überschreitung von DRIFT_IDLE_TIME_MS
+        /*if (!_idle && idle_duration > DRIFT_IDLE_TIME_MS) {
+            
+        }*/
+        
+        // Wenn idle UND Cooldown abgelaufen: Trigger sanfte Korrektur
+        if (_idle && idle_duration > DRIFT_IDLE_TIME_MS) {
+            if ((now - _last_tare_time) > DRIFT_COOLDOWN_MS) {
+                soft_tare_update(DRIFT_WEIGHT_FACTOR);
+                _last_tare_time = now;
+            }
+        }
+    } else {
+        // System aktiv: Reset idle state
+        if (_idle) {
+            _idle = false;
+        }
+        _last_activity_time = now;
+    }
+}
+
+/**
+ * @brief Sanfte Drift-Kompensation durch exponentiell gewichtete Offset-Anpassung.
+ *        Wird aufgerufen, wenn der Sensor längere Zeit im Idle-Zustand war.
+ *        Die neue Offset wird nicht sofort ersetzt, sondern mit exponentieller Gewichtung
+ *        kombiniert: offset_neu = offset_alt * (1 - weight) + neue_messung * weight
+ * 
+ * @param weight_factor Gewichtung des neuen Messwerts (0.0-1.0). Z.B. 0.2 = 20% neu, 80% alt.
+ */
+void HX71708_ADC::soft_tare_update(float weight_factor) {
+    if (weight_factor <= 0.0f || weight_factor > 1.0f) {
+        Serial.println("WARN: soft_tare_update() weight_factor muss zwischen 0.0 und 1.0 sein");
         return;
     }
 
-    // Lese den Rohwert mit dem bekannten Gewicht
-    long rawValueWithWeight = 0;
-    int numReadings = 20;
-    Serial.print("Kalibrierung wird durchgeführt mit ");
-    Serial.print(knownWeightGrams);
-    Serial.println(" Gramm. Bitte Gewicht auflegen.");
+    // Sammle kurze Stichprobe (schnell, kein vollständiges Tare-Protokoll)
+    long sample_sum = 0;
+    int sample_count = 0;
+    const int num_samples = 8;
+    const int timeout_ms = 50;
 
-    // Warte, bis der Benutzer das Gewicht aufgelegt hat (optional)
-    delay(10000); // 5 Sekunden warten
+    for (int i = 0; i < num_samples; i++) {
+        unsigned long start = millis();
+        // Timeout-Check: Falls Sensor hängt, abbrechen
+        while (digitalRead(_doutPin) == HIGH && (millis() - start) < timeout_ms) {
+            yield();
+        }
+        /*if ((millis() - start) >= timeout_ms) {
+            Serial.print("WARN: soft_tare_update() Timeout an DOUT-Pin ");
+            Serial.println(_doutPin);
+            return; // Abbrechen bei Timeout
+        }*/
 
-    for (int i = 0; i < numReadings; i++) {
-        rawValueWithWeight += read320Hz();
-        delay(10);
+        long raw = read320Hz();
+        if (!_last_read_timed_out) {
+            sample_sum += raw;
+            sample_count++;
+        }
+        delay(5); // Kleine Pause zwischen Messungen
     }
-    rawValueWithWeight /= numReadings;
 
-    // Berechne den Skalierungsfaktor
-    // Skalierungsfaktor = (Bekanntes Gewicht) / (Rohwert mit Gewicht - Nullpunkt)
-    _scale_factor = knownWeightGrams / (float)(rawValueWithWeight - _offset);
-    Serial.print("Kalibrierungsfaktor gesetzt auf: ");
-    Serial.println(_scale_factor, 6); // Ausgabe mit 6 Dezimalstellen
+    long new_sample = sample_sum / sample_count;
+
+    // Exponentiell gewichtete Kombination
+    float old_factor = 1.0f - weight_factor;
+    long new_offset = (long)((_offset * old_factor) + (new_sample * weight_factor));
+
+
+    _offset = new_offset;
 }
+
