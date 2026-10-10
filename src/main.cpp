@@ -31,8 +31,6 @@ void setup() {
     
     // Kalibrierung aller Sensoren
     calibrateAllSensors();
-
-    //calibrationValues();
     
     Serial.println("Initialisierung abgeschlossen.");
 
